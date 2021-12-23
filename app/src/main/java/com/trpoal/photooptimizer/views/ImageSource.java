@@ -1,4 +1,4 @@
-package com.trpoal.photooptimizer.helpers;
+package com.trpoal.photooptimizer.views;
 
 import android.graphics.Bitmap;
 import android.graphics.Rect;
