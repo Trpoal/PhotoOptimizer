@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item android:id="@+id/action_approve"
+        android:title="Search"
+        android:icon="@drawable/outline_done_white_18dp"
+        app:showAsAction="ifRoom|collapseActionView"/>
+    <item android:id="@+id/action_decline"
+        android:title="Search"
+        android:icon="@drawable/outline_close_white_18dp"
+        app:showAsAction="ifRoom|collapseActionView"/>
+    <item android:id="@+id/action_open_folder"
+        android:title="Search"
+        android:icon="@drawable/outline_folder_white_18dp"
+        app:showAsAction="ifRoom|collapseActionView"/>
+</menu>
