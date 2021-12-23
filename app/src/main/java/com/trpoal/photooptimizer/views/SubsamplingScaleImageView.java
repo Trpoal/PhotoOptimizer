@@ -1,4 +1,4 @@
-package com.trpoal.photooptimizer.helpers;
+package com.trpoal.photooptimizer.views;
 
 import android.content.ContentResolver;
 import android.content.Context;

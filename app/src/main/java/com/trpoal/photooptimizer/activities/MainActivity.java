@@ -3,7 +3,6 @@ package com.trpoal.photooptimizer.activities;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -20,13 +19,9 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.Surface;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.BaseAdapter;
 import android.widget.Gallery;
-import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
@@ -34,10 +29,11 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.FileProvider;
 
-import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.trpoal.photooptimizer.R;
-import com.trpoal.photooptimizer.helpers.ImageSource;
-import com.trpoal.photooptimizer.helpers.SubsamplingScaleImageView;
+import com.trpoal.photooptimizer.helpers.GalleryImageAdapter;
+import com.trpoal.photooptimizer.views.ImageSource;
+import com.trpoal.photooptimizer.helpers.Results;
+import com.trpoal.photooptimizer.views.SubsamplingScaleImageView;
 import com.trpoal.photooptimizer.helpers.Classifier;
 
 import java.io.File;
@@ -46,12 +42,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
-
-import uk.co.samuelwall.materialtaptargetprompt.MaterialTapTargetPrompt;
-import uk.co.samuelwall.materialtaptargetprompt.extras.PromptBackground;
-import uk.co.samuelwall.materialtaptargetprompt.extras.backgrounds.RectanglePromptBackground;
-import uk.co.samuelwall.materialtaptargetprompt.extras.focals.RectanglePromptFocal;
 
 public class MainActivity extends AppCompatActivity {
     private static int REQUEST_IMAGE_CAPTURE = 1;
@@ -71,9 +61,6 @@ public class MainActivity extends AppCompatActivity {
     private File photoFile;
     private ProgressBar progressBar;
 
-    private MenuItem approveItem;
-    private MenuItem declineItem;
-
     private SubsamplingScaleImageView selectedImage;
     private GalleryImageAdapter galleryImageAdapter;
 
@@ -85,10 +72,6 @@ public class MainActivity extends AppCompatActivity {
 
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        File clear = new File(Environment.getExternalStorageDirectory().getAbsolutePath()+"/clear/");
-        clear.mkdirs();
-        File notClear = new File(Environment.getExternalStorageDirectory().getAbsolutePath()+"/notclear/");
-        notClear.mkdirs();
         setContentView(R.layout.activity_main);
         textView = findViewById(R.id.text);
         Toolbar myToolbar = findViewById(R.id.toolbar4);
@@ -120,55 +103,12 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main_activity_actions, menu);
-        approveItem = menu.findItem(R.id.action_approve);
-        declineItem = menu.findItem(R.id.action_decline);
-        approveItem.setVisible(false);
-        declineItem.setVisible(false);
         return super.onCreateOptionsMenu(menu);
     }
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem item)
-    {
-        String result = textView.getText().toString();
-        switch (item.getItemId())
-        {
-            case R.id.action_approve:
-                if (result.contains("Clear"))
-                {
-                    try {
-                        moveFileToFolder("clear");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                else
-                {
-                    try {
-                        moveFileToFolder("notclear");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                break;
-            case R.id.action_decline:
-                if (result.contains("Clear"))
-                {
-                    try {
-                        moveFileToFolder("notclear");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                else
-                {
-                    try {
-                        moveFileToFolder("clear");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                break;
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
             case R.id.action_open_folder:
                 reset();
                 Intent intent = new Intent();
@@ -182,10 +122,7 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
-    private void reset()
-    {
-        declineItem.setVisible(false);
-        approveItem.setVisible(false);
+    private void reset() {
         galleryImageAdapter.List.clear();
         galleryImageAdapter.notifyDataSetChanged();
         selectedImage.reset(false);
@@ -201,14 +138,16 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void showProgressBar()
-    {
+    private void showProgressBar() {
         progressBar.setVisibility(View.VISIBLE);
     }
 
-    private void hideProgressBar()
-    {
+    private void hideProgressBar() {
         progressBar.setVisibility(View.GONE);
+    }
+
+    private void startOptimizer() {
+
     }
 
     public void onFloatButtonClick(View view) {
@@ -225,13 +164,6 @@ public class MainActivity extends AppCompatActivity {
             startActivityForResult(intent, REQUEST_IMAGE_CAPTURE);
         }
     }
-
-    private void startOptimizer()
-    {
-
-    }
-
-    
 
     @Override
     public void onRequestPermissionsResult(
@@ -282,8 +214,6 @@ public class MainActivity extends AppCompatActivity {
             Bitmap finalBitmap = bitmap;
             runOnUiThread(() -> {
                 if (finalBitmap != null) {
-                    declineItem.setVisible(true);
-                    approveItem.setVisible(true);
                     galleryImageAdapter.List.clear();
                     galleryImageAdapter.List.add(new Results(finalBitmap, finalResult));
                     galleryImageAdapter.notifyDataSetChanged();
@@ -305,7 +235,6 @@ public class MainActivity extends AppCompatActivity {
         try {
             classifier = Classifier.create(this, model, device, numThreads);
         } catch (IOException e) {
-
         }
 
         imageSizeX = classifier.getImageSizeX();
@@ -330,18 +259,6 @@ public class MainActivity extends AppCompatActivity {
                 return 90;
             default:
                 return 0;
-        }
-    }
-
-    public class Results
-    {
-        public Bitmap bitmap;
-        public String title;
-
-        public Results(Bitmap bitmap, String title)
-        {
-            this.bitmap = bitmap;
-            this.title = title;
         }
     }
 
@@ -384,26 +301,6 @@ public class MainActivity extends AppCompatActivity {
                 });
     }
 
-    @SuppressLint("ResourceAsColor")
-    private void shopApprovePrompt() {
-        new MaterialTapTargetPrompt.Builder(MainActivity.this)
-                .setTarget(R.id.action_approve)
-                .setCaptureTouchEventOnFocal(false)
-                .setBackgroundColour(R.color.semi_transparent2)
-                .setIcon(R.drawable.outline_done_black_18dp)
-                .setCaptureTouchEventOutsidePrompt(false)
-                .setAutoDismiss(false)
-                .setPrimaryText("Approve it!!!")
-                .setSecondaryText("APPPPPROVE!")
-                .setPromptStateChangeListener((prompt, state) -> {
-                    if (state == MaterialTapTargetPrompt.STATE_DISMISSED)
-                    {
-                        // User has pressed the prompt target
-                    }
-                })
-                .show();
-    }
-
     @RequiresApi(api = Build.VERSION_CODES.N)
     public ArrayList<Bitmap> createBitmaps(Bitmap source){
         ArrayList<Bitmap> bmp = new ArrayList<>();
@@ -430,20 +327,5 @@ public class MainActivity extends AppCompatActivity {
         File image = File.createTempFile(imageFileName, ".jpg", storageDir);
         currentPhotoPath = image.getAbsolutePath();
         return image;
-    }
-
-    private void moveFileToFolder(String folderName) throws IOException {
-        if (photoFile != null) {
-            File to = new File(Environment.getExternalStorageDirectory()
-                    .getAbsolutePath()+"/"+folderName+"/"+ UUID.randomUUID() +".jpg");
-            if (!to.exists())
-            {
-                to.createNewFile();
-            }
-            photoFile.renameTo(to);
-            Toast.makeText(this, "ADDED TO " + folderName, Toast.LENGTH_LONG).show();
-            declineItem.setVisible(false);
-            approveItem.setVisible(false);
-        }
     }
 }
