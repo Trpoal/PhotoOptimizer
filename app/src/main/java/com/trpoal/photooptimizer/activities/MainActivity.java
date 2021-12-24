@@ -372,13 +372,13 @@ public class MainActivity extends AppCompatActivity {
                 new AlertDialog.Builder(this)
                         .setTitle("Внимание!")
                         .setMessage("Картинка смазана!")
-                        .setPositiveButton("Переделать", (dialog, id) ->
+                        .setPositiveButton("Улучшить", (dialog, id) ->
                         {
                             dialog.dismiss();
                             showProgressBar();
                             runInBackground(() -> startOptimizer());
                         })
-                        .setNeutralButton("Продолжить", (dialog, id) -> {
+                        .setNeutralButton("Оставить", (dialog, id) -> {
                         })
                         .create()
                         .show();
