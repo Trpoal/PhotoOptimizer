@@ -65,6 +65,7 @@
             android:onClick="onFloatButtonClick"
             android:background="#2A0C4E"
             app:backgroundTint="#2A0C4E"
+            android:tint="@color/white"
             android:src="@drawable/ic_baseline_add"/>
     </RelativeLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

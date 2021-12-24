@@ -13,8 +13,8 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.os.SystemClock;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.Surface;
@@ -36,6 +36,15 @@ import com.trpoal.photooptimizer.helpers.Results;
 import com.trpoal.photooptimizer.views.SubsamplingScaleImageView;
 import com.trpoal.photooptimizer.helpers.Classifier;
 
+import org.opencv.android.OpenCVLoader;
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfByte;
+import org.opencv.core.MatOfFloat;
+import org.opencv.core.MatOfInt;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
+
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -60,11 +69,11 @@ public class MainActivity extends AppCompatActivity {
     private TextView textView;
     private File photoFile;
     private ProgressBar progressBar;
+    private Bitmap finalBitmap;
+    private Handler handler;
 
     private SubsamplingScaleImageView selectedImage;
     private GalleryImageAdapter galleryImageAdapter;
-
-    String finalResult = "Processing... ";
 
     @SuppressLint("ResourceAsColor")
     @RequiresApi(api = Build.VERSION_CODES.M)
@@ -98,6 +107,10 @@ public class MainActivity extends AppCompatActivity {
         if (!hasPermission()) {
             requestPermission();
         }
+        if (!OpenCVLoader.initDebug())
+            Log.d("ERROR", "Unable to load OpenCV");
+        else
+            Log.d("SUCCESS", "OpenCV loaded");
     }
 
     @Override
@@ -147,7 +160,72 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startOptimizer() {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        finalBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+        byte[] byteArray = stream.toByteArray();
 
+        Mat srcImage = Imgcodecs.imdecode(new MatOfByte(byteArray), Imgcodecs.IMREAD_UNCHANGED);
+        Mat grayImage = new Mat();
+        Imgproc.cvtColor(srcImage, grayImage, Imgproc.COLOR_RGB2GRAY);
+
+        MatOfInt historamSize = new MatOfInt(256);
+        MatOfFloat histogramRange = new MatOfFloat(0f, 256f);
+        MatOfInt chanel = new MatOfInt(0);
+        Mat mask = new Mat();
+        Mat histogram = new Mat();
+
+        List<Mat> list = new ArrayList<Mat>();
+        list.add(grayImage);
+        Imgproc.calcHist(list, chanel, mask, histogram, historamSize, histogramRange);
+
+        grayImage.release();
+        mask.release();
+
+        ArrayList<Float> accumulator = new ArrayList<Float>();
+        accumulator.add((float)histogram.get(0, 0)[0]);
+        for (int i = 1; i < 256; i++)
+        {
+            accumulator.add(accumulator.get(i - 1) + (float)histogram.get(i, 0)[0]);
+        }
+
+        histogram.release();
+
+        Float maximum = accumulator.get(256 - 1);
+
+        double clipHistPercent = 1.0;
+        clipHistPercent *= (maximum / 100.0);
+        clipHistPercent /= 2.0;
+
+        int minimumGray = 0;
+        while (accumulator.get(minimumGray) < clipHistPercent)
+        {
+            minimumGray++;
+        }
+
+        int maximumGray = 256 - 1;
+        while (accumulator.get(maximumGray) >= (maximum - clipHistPercent))
+        {
+            maximumGray--;
+        }
+
+        double alpha = 255.0 / (maximumGray - minimumGray);
+        double beta = -minimumGray * alpha;
+        srcImage.convertTo(srcImage, -1, alpha, beta);
+
+        MatOfByte resultImage = new MatOfByte();
+        Imgcodecs.imencode(".jpg", srcImage, resultImage);
+
+        byte[] result = resultImage.toArray();
+        Bitmap bitmap = BitmapFactory.decodeByteArray(result, 0, result.length);
+
+        runOnUiThread(() -> {
+            hideProgressBar();
+            Results results = new Results(bitmap, "Optimized");
+            galleryImageAdapter.List.add(results);
+            selectedImage.setImage(ImageSource.bitmap(results.bitmap));
+            galleryImageAdapter.notifyDataSetChanged();
+            textView.setText(String.format("Result: %s", results.title));
+        });
     }
 
     public void onFloatButtonClick(View view) {
@@ -197,34 +275,43 @@ public class MainActivity extends AppCompatActivity {
         showProgressBar();
         runInBackground(() -> {
             Bitmap bitmap = null;
+
             if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
                 bitmap = BitmapFactory.decodeFile(photoFile.getPath());
             } else if (requestCode == PICK_IMAGE && resultCode == RESULT_OK) {
-                Uri uri = data.getData();
-                try {
-                    bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), uri);
-                    photoFile = CreateImageFile();
-                    OutputStream stream = new FileOutputStream(photoFile);
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
-                    stream.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                bitmap = getFolderByPath(data);
             }
-            Bitmap finalBitmap = bitmap;
+
+            finalBitmap = bitmap;
             runOnUiThread(() -> {
                 if (finalBitmap != null) {
                     galleryImageAdapter.List.clear();
-                    galleryImageAdapter.List.add(new Results(finalBitmap, finalResult));
+                    galleryImageAdapter.List.add(new Results(finalBitmap, "Original image"));
                     galleryImageAdapter.notifyDataSetChanged();
-                    processImage(finalBitmap);
+                    runInBackground(() -> processImage(finalBitmap));
                 }
-                else
-                {
+                else {
                     hideProgressBar();
                 }
             });
         });
+    }
+
+    private Bitmap getFolderByPath(@Nullable Intent data) {
+        Bitmap bitmap = null;
+        if (data != null) {
+            Uri uri = data.getData();
+            try {
+                bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), uri);
+                photoFile = CreateImageFile();
+                OutputStream stream = new FileOutputStream(photoFile);
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+                stream.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return bitmap;
     }
 
     private void recreateClassifier(Classifier.Model model, Classifier.Device device, int numThreads) {
@@ -235,13 +322,12 @@ public class MainActivity extends AppCompatActivity {
         try {
             classifier = Classifier.create(this, model, device, numThreads);
         } catch (IOException e) {
+            Log.d("Exception", e.getMessage());
         }
 
         imageSizeX = classifier.getImageSizeX();
         imageSizeY = classifier.getImageSizeY();
     }
-
-    private Handler handler;
 
     protected synchronized void runInBackground(final Runnable r) {
         if (handler != null) {
@@ -264,41 +350,42 @@ public class MainActivity extends AppCompatActivity {
 
     @SuppressLint("ResourceAsColor")
     @RequiresApi(api = Build.VERSION_CODES.N)
-    protected void processImage(Bitmap bit) {
-        runInBackground(
-                () -> {
-                    if (classifier != null) {
-                        final long startTime = SystemClock.uptimeMillis();
+    private void processImage(Bitmap bit) {
+        if (classifier != null) {
+            ArrayList<Bitmap> bitmaps = createBitmaps(bit);
+            int blurCount = 0;
+            for (int i = 0; i < bitmaps.size(); i++) {
+                List<Classifier.Recognition> list = classifier.recognizeImage(bitmaps.get(i), getScreenOrientation());
+                galleryImageAdapter.List.add(new Results(bitmaps.get(i), list.get(0).getTitle()));
+                if (list.get(0).getTitle().equals("Not Clear")) {
+                    blurCount++;
+                }
+            }
 
-                        ArrayList<Bitmap> bitmaps = createBitmaps(bit);
-                        int blurCount = 0;
-                        for (int i = 0; i < bitmaps.size(); i++) {
-                            List<Classifier.Recognition> list = classifier.recognizeImage(bitmaps.get(i), getScreenOrientation());
-                            galleryImageAdapter.List.add(new Results(bitmaps.get(i), list.get(0).getTitle()));
-                            if (list.get(0).getTitle().equals("Not Clear")) {
-                                blurCount++;
-                            }
-                        }
+            processResults(blurCount, bitmaps.size());
+        }
+    }
 
-                        int finalBlurCount = blurCount;
-                        runOnUiThread(
-                                () -> {
-                                    if (finalBlurCount >= bitmaps.size() / 2) {
-                                        finalResult = "Not Clear";
-                                        new AlertDialog.Builder(this)
-                                                .setTitle("Внимание!")
-                                                .setMessage("Картинка смазана!")
-                                                .setPositiveButton("Переделать", (dialog, id) -> startOptimizer())
-                                                .setNeutralButton("Продолжить", (dialog, id) -> {
-                                                })
-                                                .create()
-                                                .show();
-                                    }
-                                    galleryImageAdapter.notifyDataSetChanged();
-                                    hideProgressBar();
-                                });
-                    }
-                });
+    private void processResults(int finalBlurCount, int bitmapsSize) {
+        runOnUiThread(() -> {
+            if (finalBlurCount >= bitmapsSize / 2) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Внимание!")
+                        .setMessage("Картинка смазана!")
+                        .setPositiveButton("Переделать", (dialog, id) ->
+                        {
+                            dialog.dismiss();
+                            showProgressBar();
+                            runInBackground(() -> startOptimizer());
+                        })
+                        .setNeutralButton("Продолжить", (dialog, id) -> {
+                        })
+                        .create()
+                        .show();
+            }
+            galleryImageAdapter.notifyDataSetChanged();
+            hideProgressBar();
+        });
     }
 
     @RequiresApi(api = Build.VERSION_CODES.N)
